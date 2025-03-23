@@ -7,6 +7,12 @@ from prefect_sqlalchemy import SqlAlchemyConnector
 
 @task(name="Setup Table")
 def setup_table(block_name: str) -> None:
+    """Create the table if it does not exist
+    
+    Args:
+        block_name (str): The name of the block
+    """
+    
     with SqlAlchemyConnector.load(block_name) as connector:
         connector.execute(
             "CREATE TABLE IF NOT EXISTS Article (article_id INTEGER PRIMARY KEY,title varchar, description varchar,url varchar UNIQUE, publisherAt, source_id, FOREIGN KEY (source_id) REFERENCES Source(source_id));"
@@ -18,6 +24,12 @@ def setup_table(block_name: str) -> None:
 
 @task(name="Insert Article and source")
 def insert_article(block_name: str, json_response: dict):
+    """Insert the articles and source into the database if the source does not exist
+        
+    Args:
+        block_name (str): The name of the block
+        json_response (dict): The json response from the API
+        """
     with SqlAlchemyConnector.load(block_name) as connector:
         for article in json_response["articles"]:
             title = article["title"].lower()
@@ -64,12 +76,15 @@ def insert_article(block_name: str, json_response: dict):
 
 
 @task (name="Get Google News")
-def get_gnews():
+def get_gnews(subject:str) -> dict:
+    """Get the latest news from Google News
+    return: dict
+    """
     now = datetime.now() - timedelta(days=1)
     print("FORMATED DATE", now.strftime("%Y-%m-%dT%H:%M:%SZ"))
     """Get the latest news from Google News"""
     params = {
-        "q": "trump diversity",
+        "q": subject,
         "country": "ch",
         "apikey": "11609155901ff8946d84c2c9aff210e7",
         "max": 10,
@@ -80,9 +95,13 @@ def get_gnews():
 
 
 @flow(name="News Flows")
-def news_flows(block_name: str) -> list:
+def news_flows(block_name: str, subject:str) -> list:
+    """Flow to get the latest news from Google News and insert it into the database
+    args:
+        block_name (str): The name of the block to connect to the database.
+    """
     setup_table(block_name)
-    news = get_gnews()
+    news = get_gnews(subject=subject)
     insert_article(block_name, news)
 
 
@@ -90,7 +109,7 @@ if __name__ == "__main__":
         news_flows.serve(
         name="Google News",
         tags=["Gnews"],
-        parameters={"block_name": "testdb"},
+        parameters={"block_name": "testdb","subject":"diversité IA"},
         interval=timedelta(days=1),
     )
-
+     
