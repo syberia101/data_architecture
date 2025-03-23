@@ -3,7 +3,8 @@ from datetime import datetime, timedelta
 import httpx
 from prefect import flow, task
 from prefect_sqlalchemy import SqlAlchemyConnector
-
+from prefect.blocks.system import Secret
+# "11609155901ff8946d84c2c9aff210e7"
 
 @task(name="Setup Table")
 def setup_table(block_name: str) -> None:
@@ -78,21 +79,30 @@ def insert_article(block_name: str, json_response: dict):
 @task (name="Get Google News")
 def get_gnews(subject:str) -> dict:
     """Get the latest news from Google News
-    return: dict
+    return dict: The json response from the API
     """
+    #Access the API key from the secret block
+    secret_block = Secret.load("gnewsapi")
+    api_secret = secret_block.get()
+
     now = datetime.now() - timedelta(days=1)
     print("FORMATED DATE", now.strftime("%Y-%m-%dT%H:%M:%SZ"))
     """Get the latest news from Google News"""
     params = {
         "q": subject,
         "country": "ch",
-        "apikey": "11609155901ff8946d84c2c9aff210e7",
+        "apikey": api_secret,
         "max": 10,
         "lang": "fr",
         "from": now,
     }
-    return httpx.get("https://gnews.io/api/v4/search", params=params).json()
-
+    try:
+        response = httpx.get("https://gnews.io/api/v4/search", params=params)   
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        print("Error fetching data from Google News", e)
+        return None
 
 @flow(name="News Flows")
 def news_flows(block_name: str, subject:str) -> list:
@@ -102,6 +112,7 @@ def news_flows(block_name: str, subject:str) -> list:
     """
     setup_table(block_name)
     news = get_gnews(subject=subject)
+    print("NEWS articles  ",news["totalArticles"])
     insert_article(block_name, news)
 
 
@@ -109,7 +120,7 @@ if __name__ == "__main__":
         news_flows.serve(
         name="Google News",
         tags=["Gnews"],
-        parameters={"block_name": "testdb","subject":"diversité IA"},
+        parameters={"block_name": "testdb","subject":"Europe IA"},
         interval=timedelta(days=1),
     )
      
