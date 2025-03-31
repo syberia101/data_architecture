@@ -2,9 +2,17 @@ from datetime import datetime, timedelta
 
 import httpx
 from prefect import flow, task
-from prefect_sqlalchemy import SqlAlchemyConnector
-from prefect.blocks.system import Secret
-# "11609155901ff8946d84c2c9aff210e7"
+from prefect_sqlalchemy import SqlAlchemyConnector, ConnectionComponents, SyncDriver
+
+
+connector = SqlAlchemyConnector(
+    connection_info=ConnectionComponents(
+        driver=SyncDriver.SQLITE_PYSQLITE, database="db_test.db"
+    )
+)
+
+connector.save("testdb", overwrite=True)
+
 
 @task(name="Setup Table")
 def setup_table(block_name: str) -> None:
@@ -77,13 +85,10 @@ def insert_article(block_name: str, json_response: dict):
 
 
 @task (name="Get Google News")
-def get_gnews(subject:str) -> dict:
+def get_gnews(subject:str, api_secret:str) -> dict:
     """Get the latest news from Google News
     return dict: The json response from the API
     """
-    #Access the API key from the secret block
-    secret_block = Secret.load("gnewsapi")
-    api_secret = secret_block.get()
 
     now = datetime.now() - timedelta(days=1)
     print("FORMATED DATE", now.strftime("%Y-%m-%dT%H:%M:%SZ"))
@@ -105,22 +110,23 @@ def get_gnews(subject:str) -> dict:
         return None
 
 @flow(name="News Flows")
-def news_flows(block_name: str, subject:str) -> list:
+def news_flows(block_name: str, subject:str, api_secret:str) -> list:
     """Flow to get the latest news from Google News and insert it into the database
     args:
         block_name (str): The name of the block to connect to the database.
     """
     setup_table(block_name)
-    news = get_gnews(subject=subject)
+    news = get_gnews(subject=subject,api_secret=api_secret)
     print("NEWS articles  ",news["totalArticles"])
     insert_article(block_name, news)
 
 
 if __name__ == "__main__":
+        
         news_flows.serve(
         name="Google News",
         tags=["Gnews"],
-        parameters={"block_name": "testdb","subject":"Europe IA"},
+        parameters={"block_name": "testdb","subject":"Europe IA","api_secret":"WRITE YOUR OWN API KEY"},    
         interval=timedelta(days=1),
     )
      
